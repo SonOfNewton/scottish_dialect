@@ -47,30 +47,7 @@ prep_spatial_env <- function() {
   ))
 }
 
-# # data preparation: cleaning, rename, factorize
-# prep_question_data <- function(df, standard_ans, suffix, border_sf, global_pids) {
-#   df_clean <- df %>%
-#     dplyr::filter(lat > 0) %>%
-#     dplyr::mutate(
-#       pid = factor(pid, levels = global_pids), # shared component, keep standard name
-#       uni = as.factor(uni),
-#       gender = as.factor(gender),
-#       age_scaled = as.numeric(scale(age)),
-#       region = as.factor(region),
-#       bi_ans = ifelse(answer == standard_ans, 0, 1) # 0 for standard, 1 for dialects
-#     ) %>%
-#     # add suffix
-#     dplyr::rename_with(
-#       ~ paste0(., "_", suffix), 
-#       c(uni, gender, age_scaled, region, bi_ans)
-#     ) %>%
-#     st_as_sf(coords = c("lng", "lat"), crs = "+proj=longlat +datum=WGS84") %>%
-#     st_transform(crs = st_crs(border_sf))
-#   
-#   # filter points inside mainland Scotland
-#   df_mainland <- df_clean[border_sf, ]
-#   return(df_mainland)
-# }
+
 # data preparation: cleaning, rename, factorize
 prep_question_data <- function(df, type, standard_ans = NULL, suffix = NULL, border_sf, global_pids = NULL) {
   # basic factorization

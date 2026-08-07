@@ -23,6 +23,7 @@ The code produces:
 scottish_dialect/
 ├── code/
 │   ├── functions.R
+│   ├── joint_toy_example.R
 │   ├── joint_question_modeling.R
 │   ├── separate_question_modeling.R
 ├── data/

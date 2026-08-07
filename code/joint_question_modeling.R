@@ -1,5 +1,5 @@
 # This script applies binary classification to all types of questions and account for multiple questions in joint model
-# This script is a test with only two questions
+# This script applies metaprogramming techniques to build a model that contains an arbitrary number of terms (questions)
 # set working direction to main folder (".../scottish_dialect")
 library(ggplot2)
 library(sf)
@@ -15,6 +15,8 @@ library(patchwork)
 library(tidyr)
 source("code/functions.R",verbose=FALSE)
 
+share_covariates <- TRUE   # choose to let the questions share covariates for age, gender, and education, or to model separately for each question
+
 # calculation of common variables
 spatial_env <- prep_spatial_env()
 Scottish_border_mainland <- spatial_env$border
@@ -22,173 +24,148 @@ mesh_1 <- spatial_env$mesh
 spde <- spatial_env$spde
 pxl <- spatial_env$pxl
 
-# test with two questions
-q1 <- read.csv("data/csv/sounds-about-right-Q1-down.csv")
-q2 <- read.csv("data/csv/sounds-about-right-Q2-more.csv")
-# remove duplicate pids within each dataset to ensure each individual contributes only one response per question
-q1 <- q1 %>% distinct(pid, .keep_all = TRUE)
-q2 <- q2 %>% distinct(pid, .keep_all = TRUE)
-# a global set of unique PIDs for consistent factor levels across both datasets
-all_pids <- unique(c(q1$pid, q2$pid))
+# all questions
+Q <- c("Q1-down", "Q2-more", "Q4-die", "Q5-head")#, "Q6-make", "Q7-soft", "Q8-home", "Q9-card", "Q10-stone")
+standard <- c("noun", "door", "tie", "bed")#, "bake", "croft", "foam", "scarred", "loan")
+# note that computational cost for model fitting grows exponentially with number of question included
 
-# process data
-q1_sf <- prep_question_data(
-  df = q1, 
-  type = "sound", 
-  standard_ans = "noun", 
-  suffix = "q1",            
-  border_sf = Scottish_border_mainland,
-  global_pids = all_pids        
-)
-q2_sf <- prep_question_data(
-  df = q2, 
-  type = "sound", 
-  standard_ans = "door", 
-  suffix = "q2",                
-  border_sf = Scottish_border_mainland,
-  global_pids = all_pids
-)
+raw_data_list <- list()
+all_pids <- c()
 
-### model components
-# model 1: shared sampling intensity, separate fixed and random effects
-cmp_multi <- ~ -1 + 
-  # shared field of sampling intensity
-  Intercept_pop(1) + 
-  field_pop(geometry, model = spde) + 
-  # shared individual random effect
-  pid_eff(pid, model = "iid") +
-  # question 1
-  Intercept_q1(1) + 
-  uni_eff_q1(uni_q1, model = "iid") +          
-  gender_eff_q1(gender_q1, model = "iid") +    
-  age_eff_q1(age_scaled_q1, model = "linear") +    
-  field_pop_copy_q1(geometry, copy = "field_pop", fixed = FALSE) +    #W0
-  field_q1(geometry, model = spde) +   #W1
-  # question 2
-  Intercept_q2(1) + 
-  uni_eff_q2(uni_q2, model = "iid") +          
-  gender_eff_q2(gender_q2, model = "iid") +    
-  age_eff_q2(age_scaled_q2, model = "linear") +    
-  field_pop_copy_q2(geometry, copy = "field_pop", fixed = FALSE) +    #W0
-  field_q2(geometry, model = spde)     #W1
+for (i in seq_along(Q)) {
+  df <- read.csv(sprintf("data/csv/sounds-about-right-%s.csv", Q[i])) %>% 
+    distinct(pid, .keep_all = TRUE)
+  raw_data_list[[i]] <- df
+  all_pids <- unique(c(all_pids, df$pid))
+}
+
+sf_list <- list()
+for (i in seq_along(Q)) {
+  suffix <- paste0("q", i)
+  # process data
+  df_sf <- prep_question_data(
+    df = raw_data_list[[i]], 
+    type = "sound", 
+    standard_ans = standard[i], 
+    suffix = suffix,            
+    border_sf = Scottish_border_mainland,
+    global_pids = all_pids        
+  )
+  
+  # for model 1
+  df_sf$uni <- df_sf[[paste0("uni_", suffix)]]
+  df_sf$gender <- df_sf[[paste0("gender_", suffix)]]
+  df_sf$age_scaled <- df_sf[[paste0("age_scaled_", suffix)]]
+  
+  sf_list[[i]] <- df_sf
+}
+names(sf_list) <- paste0("q", seq_along(Q))
 
 
+# basic shared components
+cmp_str <- "~ -1 + Intercept_pop(1) + field_pop(geometry, model = spde) + pid_eff(pid, model = 'iid')"
+
+if (share_covariates) {
+  # shared fixed and random effects
+  cmp_str <- paste(cmp_str, "+ uni_eff_shared(uni, model = 'iid') + gender_eff_shared(gender, model = 'iid') + age_eff_shared(age_scaled, model = 'linear')")
+}
+
+# question-specific components
+for (i in seq_along(Q)) {
+  suffix <- paste0("q", i)
+  q_comps <- sprintf("+ Intercept_%s(1) + field_pop_copy_%s(geometry, copy = 'field_pop', fixed = FALSE) + field_%s(geometry, model = spde)", suffix, suffix, suffix)
+  
+  if (!share_covariates) {
+    q_comps <- paste(q_comps, sprintf("+ uni_eff_%s(uni_%s, model = 'iid') + gender_eff_%s(gender_%s, model = 'iid') + age_eff_%s(age_scaled_%s, model = 'linear')", suffix, suffix, suffix, suffix, suffix, suffix))
+  }
+  
+  cmp_str <- paste(cmp_str, q_comps)
+}
+
+# transform string to formula
+cmp_multi <- as.formula(cmp_str)
 
 ### likelihoods
-# sampling intensity of Q1 and Q2 are considered as two realizations of the same point process
-# likelihood 1: Q1 locations
-lik_pop_q1 <- bru_obs(
-  "cp",
-  formula = geometry ~ Intercept_pop + field_pop,
-  data = q1_sf,
-  domain = list(geometry = mesh_1),
-  samplers = Scottish_border_mainland
-)
-# likelihood 2: Q2 locations
-lik_pop_q2 <- bru_obs(
-  "cp",
-  formula = geometry ~ Intercept_pop + field_pop,
-  data = q2_sf,
-  domain = list(geometry = mesh_1),
-  samplers = Scottish_border_mainland
-)
+liks_list <- list()
 
-# likelihood 3: binomial response for Q1 
-lik_q1 <- bru_obs(
-  "binomial",
-  formula = bi_ans_q1 ~ Intercept_q1 + uni_eff_q1 + gender_eff_q1 + age_eff_q1 + pid_eff + field_pop_copy_q1 + field_q1,
-  data = q1_sf,
-  Ntrials = 1
-)
-# likelihood 4: binomial response for Q2
-lik_q2 <- bru_obs(
-  "binomial",
-  formula = bi_ans_q2 ~ Intercept_q2 + uni_eff_q2 + gender_eff_q2 + age_eff_q2 + pid_eff + field_pop_copy_q2 + field_q2,
-  data = q2_sf,
-  Ntrials = 1
-)
+for (i in seq_along(Q)) {
+  suffix <- paste0("q", i)
+  current_sf <- sf_list[[i]]
+  
+  # point process for sampling intensity
+  lik_pop <- bru_obs(
+    "cp",
+    formula = geometry ~ Intercept_pop + field_pop,
+    data = current_sf,
+    domain = list(geometry = mesh_1),
+    samplers = Scottish_border_mainland
+  )
+  liks_list <- append(liks_list, list(lik_pop))
+  
+  # point process for binary response
+  if (share_covariates) {
+    form_str <- sprintf("bi_ans_%s ~ Intercept_%s + uni_eff_shared + gender_eff_shared + age_eff_shared + pid_eff + field_pop_copy_%s + field_%s", suffix, suffix, suffix, suffix)
+  } else {
+    form_str <- sprintf("bi_ans_%s ~ Intercept_%s + uni_eff_%s + gender_eff_%s + age_eff_%s + pid_eff + field_pop_copy_%s + field_%s", suffix, suffix, suffix, suffix, suffix, suffix, suffix)
+  }
+  
+  lik_ans <- bru_obs(
+    "binomial",
+    formula = as.formula(form_str),
+    data = current_sf,
+    Ntrials = 1
+  )
+  liks_list <- append(liks_list, list(lik_ans))
+}
 
 
 ### fit the joint model
-fit_multi <- bru(cmp_multi, lik_pop_q1, lik_pop_q2, lik_q1, lik_q2)
+cat("Fitting full joint model with", length(Q), "questions...\n")
+t1 <- Sys.time()
+# equivalent to: bru(cmp_multi, liks_list[[1]], liks_list[[2]], ..., liks_list[[18]])
+fit_multi <- do.call(bru, c(list(components = cmp_multi), liks_list))
+t2 <- Sys.time()
+cat("Model fitting took", t2-t1, "seconds to complete.")
 # summary(fit_multi)
 
-
 ### predictions and visualization
-# plot latent fields (W0, W1, W2)
-pred_fields <- predict(
-  fit_multi, 
-  pxl, 
-  ~ data.frame(
-    W0_Sampling = field_pop, 
-    W1_Q1_Specific = field_q1,
-    W2_Q2_Specific = field_q2
-  )
-)
+pred_str <- "~ data.frame("
+for (i in seq_along(Q)) {
+  suffix <- paste0("q", i)
+  pred_item <- sprintf("Prob_%s = plogis(Intercept_%s + field_pop_copy_%s + field_%s)", suffix, suffix, suffix, suffix)
+  if (i < length(Q)) pred_item <- paste0(pred_item, ", ")
+  pred_str <- paste(pred_str, pred_item)
+}
+pred_str <- paste(pred_str, ")")
 
-p_w0 <- ggplot(data = pred_fields$W0_Sampling) +
-  geom_sf(aes(color = mean), size = 0.5) +  
-  scale_color_scico(palette = "lajolla", na.value = "grey80") +
-  ggtitle("W0: Shared Sampling Intensity") + theme_minimal()
+pred_response <- predict(fit_multi, pxl, as.formula(pred_str))
 
-p_w1 <- ggplot(data = pred_fields$W1_Q1_Specific) +
-  geom_sf(aes(color = mean), size = 0.5) +  
-  scale_color_scico(palette = "broc", na.value = "grey80") +
-  ggtitle("W1: Q1 (down) Specific Field") + theme_minimal()
+plot_list <- list()
+for (i in seq_along(Q)) {
+  suffix <- paste0("q", i)
+  q_name <- Q[i]
+  df_prob <- pred_response[[paste0("Prob_", suffix)]]
+  
+  p_mean <- ggplot(data = df_prob) +
+    geom_sf(aes(color = mean), size = 0.5) +  
+    scale_color_scico(palette = "roma", direction = -1, limits = c(0, 1), na.value = "grey80") +
+    geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
+    ggtitle(sprintf("%s (Mean)", q_name)) + labs(color = "Mean") + theme_minimal()
+  
+  p_sd <- ggplot(data = df_prob) +
+    geom_sf(aes(color = sd), size = 0.5) +  
+    scale_color_scico(palette = "lajolla", na.value = "grey80") +
+    geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
+    ggtitle("SD") + labs(color = "SD") + theme_minimal()
 
-p_w2 <- ggplot(data = pred_fields$W2_Q2_Specific) +
-  geom_sf(aes(color = mean), size = 0.5) +  
-  scale_color_scico(palette = "broc", na.value = "grey80") +
-  ggtitle("W2: Q2 (more) Specific Field") + theme_minimal()
+  plot_list[[i]] <- p_mean + p_sd
+}
 
-p_fields_combined <- p_w0 | p_w1 | p_w2
-ggsave(
-  filename = "output/figures/joint_spatial_fields_Q1_Q2.pdf",
-  plot = p_fields_combined,
-  width = 15, height = 10
-)
-
-
-# plot posterior predictions (mean, std) of a baseline profile (omits pid_eff, uni_eff, age_eff, and gender_eff)
-pred_response <- predict(
-  fit_multi, 
-  pxl, 
-  ~ data.frame(
-    Q1_Prob = plogis(Intercept_q1 + field_pop_copy_q1 + field_q1),
-    Q2_Prob = plogis(Intercept_q2 + field_pop_copy_q2 + field_q2)
-  )
-)
-
-p_q1_mean <- ggplot(data = pred_response$Q1_Prob) +
-  geom_sf(aes(color = mean), size = 0.5) +  
-  scale_color_scico(palette = "roma", direction = -1, limits = c(0, 1), na.value = "grey80") +
-  geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
-  ggtitle("Q1 (down) Probability (Mean)") + labs(color = "Mean") + theme_minimal()
-
-p_q1_sd <- ggplot(data = pred_response$Q1_Prob) +
-  geom_sf(aes(color = sd), size = 0.5) +  
-  scale_color_scico(palette = "lajolla", na.value = "grey80") +
-  geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
-  ggtitle("Q1 Uncertainty (SD)") + labs(color = "SD") + theme_minimal()
-
-p_q2_mean <- ggplot(data = pred_response$Q2_Prob) +
-  geom_sf(aes(color = mean), size = 0.5) +  
-  scale_color_scico(palette = "roma", direction = -1, limits = c(0, 1), na.value = "grey80") +
-  geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
-  ggtitle("Q2 (more) Probability (Mean)") + labs(color = "Mean") + theme_minimal()
-
-p_q2_sd <- ggplot(data = pred_response$Q2_Prob) +
-  geom_sf(aes(color = sd), size = 0.5) +  
-  scale_color_scico(palette = "lajolla", na.value = "grey80") +
-  geom_sf(data = Scottish_border_mainland, fill = NA, color = "black", linewidth = 0.2) +
-  ggtitle("Q2 Uncertainty (SD)") + labs(color = "SD") + theme_minimal()
-
-p_response_combined <- (p_q1_mean + p_q1_sd) / (p_q2_mean + p_q2_sd) + 
-  plot_annotation(title = "Joint Model Posterior Predictions (Population Average Baseline)")
+p_all_combined <- wrap_plots(plot_list, ncol = 1) + 
+  plot_annotation(title = "joint model posterior predictions (all questions baseline)")
 
 ggsave(
-  filename = "output/figures/joint_predictions_Q1_Q2.pdf",
-  plot = p_response_combined,
-  width = 14, height = 12
+  filename = "output/figures/joint_predictions_all.pdf",
+  plot = p_all_combined,
+  width = 14, height = 4 * length(Q), limitsize = FALSE
 )
-
