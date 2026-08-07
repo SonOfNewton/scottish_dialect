@@ -1,4 +1,4 @@
-# This script suits for categorical answers, i.e., "give your word" and "sounds about right" maps.
+# This script applies binary classification to all types of questions and models each question separately
 # set working direction to main folder (".../scottish_dialect")
 library(ggplot2)
 library(sf)
@@ -25,7 +25,7 @@ specify_age = 20
 specify_gender = "Female"
 specify_uni = "Y"
 
-plot_fields = FALSE   # plot spatial field w1 and w2
+plot_fields = FALSE   # can choose to skip the plot of spatial field w1 and w2
 do_excursion = FALSE   # can choose to skip the excursion set plot
 exc_threshold = 0.6        # threshold of dialect usage proportion (each type should have different threshold)
 exc_confidence = 0.85      # threshold of confidence
@@ -48,41 +48,14 @@ all_gender_summary <- data.frame() # for gender effect
 hyper_table <- data.frame()        # for posterior of hyperparameters
 spatial_fields_df <- data.frame()  # for spatial field
 
-### extract common calculations out of the loop
-# get map
-uk_mask <- geodata::gadm(country='GBR', level=1, path=getwd())
-Scottish_border <- uk_mask %>% 
-  tidyterra::filter(NAME_1 %in% "Scotland") %>%
-  st_as_sf() %>%
-  st_transform(crs = "+proj=longlat +datum=WGS84")
+# calculation of common variables
+spatial_env <- prep_spatial_env()
+Scottish_border_mainland <- spatial_env$border
+mesh_1 <- spatial_env$mesh
+spde <- spatial_env$spde
+pxl <- spatial_env$pxl
 
-Scottish_border_mainland <- Scottish_border %>% 
-  st_cast("POLYGON") %>%
-  dplyr::mutate(area = st_area(.)) %>%
-  arrange(desc(area)) %>%
-  slice(1) %>%
-  st_transform(crs = 27700)
-
-Scottish_border_mainland <- st_transform(
-  Scottish_border_mainland,
-  gsub("units=m", "units=km", st_crs(Scottish_border_mainland)$proj4string)
-) 
-
-# build mesh
-mesh_1 <- fm_mesh_2d(
-  boundary = Scottish_border_mainland,
-  max.edge = c(0.5, 40),
-  cutoff = 10,
-  crs = crs(Scottish_border_mainland)
-)
-
-# set up the spde model
-spde <- inla.spde2.pcmatern(
-  mesh_1,
-  prior.range = c(150, .5),  # Pr(practic.range<150 km)=0.5
-  prior.sigma = c(1, 0.5)    # PR(sigma>1)=0.5
-)
-
+# model components
 if (use_factors == TRUE){
   cmp_joint <- ~ -1 + 
     # items in spatial point process
@@ -107,14 +80,10 @@ if (use_factors == TRUE){
     field_ans(geometry, model = spde)       # residual for answers
 }
 
-# mesh for prediction
-pxl <- fm_pixels(mesh_1, mask = Scottish_border_mainland, dims = c(200, 200))
-
 
 ### iterate over all questions
 for (i in seq_along(Q)) {
   q <- Q[i]
-  
   if (type == "sound"){
     s <- standard[i]
     question <- read.csv(sprintf("data/csv/sounds-about-right-%s.csv", q))
@@ -125,41 +94,20 @@ for (i in seq_along(Q)) {
     question <- read.csv(sprintf("data/csv/lexical-%s.csv", q))
   }
   question <- question[question$lat > 0, ]
+
+  # process data
+  sf_mainland_answers <- prep_question_data(
+    df = question, 
+    type = type, 
+    standard_ans = s, 
+    suffix = NULL,       
+    global_pids = NULL,  
+    border_sf = Scottish_border_mainland
+  )
   
-  # transform into binary variable
-  if (type == "sound" | type == "word"){
-    answers_full <- question %>%
-      dplyr::select(answer, lng, lat, uni, age, gender, region) %>%
-      dplyr::mutate(
-        uni = as.factor(uni),         
-        age_scaled = as.numeric(scale(age)),
-        gender = as.factor(gender),
-        region = as.factor(region),
-        is_ans1 = ifelse(answer == s, 0, 1)   # 0 for standard, 1 for dialects
-      )
-  } else if(type == "say"){
-    answers_full <- question %>%
-      dplyr::select(answer, lng, lat, uni, age, gender, region) %>%
-      dplyr::mutate(
-        uni = as.factor(uni),    
-        age_scaled = as.numeric(scale(age)),
-        gender = as.factor(gender),
-        region = as.factor(region),
-        is_ans1 = ifelse(as.numeric(answer) == 4, 1, 0)    # 1 for usage of dialects, 0 for others (1,2,3)
-      )
-  } 
-  
-  loc_sf <- question[,c("lng", "lat")] %>% 
-    st_as_sf(coords=c("lng","lat"), crs = "+proj=longlat +datum=WGS84")
-  answers_sf <- st_as_sf(answers_full, coords = c("lng","lat"), crs = "+proj=longlat +datum=WGS84")
-  
-  loc_sf <- loc_sf %>% st_transform(crs = st_crs(Scottish_border_mainland))
-  answers_sf <- answers_sf %>% st_transform(crs = st_crs(Scottish_border_mainland))
-  
-  sf_mainland <- loc_sf[Scottish_border_mainland,]
-  sf_mainland_answers <- answers_sf[Scottish_border_mainland,]
-  
-  
+  sf_mainland <- sf_mainland_answers %>% dplyr::select(geometry)
+
+  #likelihoods
   lik_pop <- bru_obs(
     "cp",
     formula = geometry ~ Intercept_pop + field_pop,
@@ -171,19 +119,18 @@ for (i in seq_along(Q)) {
   if (use_factors == TRUE){
     lik_ans <- bru_obs(
       "binomial",
-      formula = is_ans1 ~ Intercept_ans + uni_eff + gender_eff + age_eff + field_pop_copy + field_ans,
+      formula = bi_ans ~ Intercept_ans + uni_eff + gender_eff + age_eff + field_pop_copy + field_ans,
       data = sf_mainland_answers,
       Ntrials = 1
     )
   } else{
     lik_ans <- bru_obs(
       "binomial",
-      formula = is_ans1 ~ Intercept_ans + field_pop_copy + field_ans,
+      formula = bi_ans ~ Intercept_ans + field_pop_copy + field_ans,
       data = sf_mainland_answers,
       Ntrials = 1
     )
   }
-  
   
   fit_joint <- bru(cmp_joint, lik_pop, lik_ans)
   
