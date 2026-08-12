@@ -42,39 +42,50 @@ scottish_dialect/
 ### Model A: question-wise simple model that accounts for inhomogeneous sampling efforts and spatial autocorrelation.
 
 **Spatial point process for the samples:**
-> Latent field: $\eta_1(s) = \beta_1 + W_1 (s)$  
-> Link function: $\log(\lambda(s))= \eta_1 (s)$
+* Latent field:
+  $$\eta_1(s) = \beta_1 + W_1 (s)$$
+* Link function:
+  $$\log(\lambda(s))= \eta_1 (s)$$
 
 **Spatial model for binarized answers:**
-> Latent field: $\eta_2(s_i) = \beta_2 + \alpha \cdot W_1(s_i) + W_2(s_i)$  
-> Link function: $\text{logit}(p(s_i))= \eta_2 (s_i)$
+* Latent field:
+  $$\eta_2(s_i) = \beta_2 + \alpha \cdot W_1(s_i) + W_2(s_i)$$
+* Link function:
+  $$\text{logit}(p(s_i))= \eta_2 (s_i)$$
 
 ---
 
 ### Model B: add in factors of age, gender, and education in model A
 
-**Latent field of the spatial model for answers:**
-> Latent field: $\eta_2(s_i) = \beta_2 + \beta_{\text{age}} \cdot \text{Age}_i + \gamma_{\text{gender}(i)} + \gamma_{\text{uni}(i)} + \alpha \cdot W_1(s_i) + W_2(s_i)$
+**Spatial model for binarized answers:**
+* Latent field:
+  $$\eta_2(s_i) = \beta_2 + \beta_{\text{age}} \cdot \text{Age}_i + \gamma_{\text{gender}(i)} + \gamma_{\text{uni}(i)} + \alpha \cdot W_1(s_i) + W_2(s_i)$$
 
 ---
 
 ### Model C: joint model for multiple ($K$) questions that (in addition to model B) accounts for random effect on individuals, with shared age, gender, and education effects.
 
 **Spatial point process for the samples:**
-> Shared latent field: $\eta_{\text{pop}}(s) = \beta_{\text{pop}} + W_0(s)$  
-> Link function: $\log(\lambda(s))= \eta_{\text{pop}} (s)$  
-> Multiple realizations for likelihood: $S_k \sim \text{PoissonProcess}(\lambda(s)) \quad \text{for } k = 1, \dots, K$
+* Shared latent field:
+  $$\eta_{\text{pop}}(s) = \beta_{\text{pop}} + W_0(s)$$
+* Link function:
+  $$\log(\lambda(s))= \eta_{\text{pop}} (s)$$
+* Multiple realizations for likelihood:
+  $$S_k \sim \text{PoissonProcess}(\lambda(s)) \quad \text{for } k = 1, \dots, K$$
 
 **Spatial model for binarized answers:**
-> Shared latent field: $\eta_{k}(s_{i,k}) = \beta_k + \beta_{\text{age}} \cdot \text{Age}_{i,k} + \gamma_{\text{gender}(i,k)} + \gamma_{\text{uni}(i,k)} + \upsilon_{\text{pid}(i)} + \alpha_k \cdot W_0(s_{i,k}) + W_k(s_{i,k})$  
-> Link function: $\text{logit}(p_{i,k}) = \eta_k(s_{i,k})$
+* Shared latent field:
+  $$\eta_{k}(s_{i,k}) = \beta_k + \beta_{\text{age}} \cdot \text{Age}_{i,k} + \gamma_{\text{gender}(i,k)} + \gamma_{\text{uni}(i,k)} + \upsilon_{\text{pid}(i)} + \alpha_k \cdot W_0(s_{i,k}) + W_k(s_{i,k})$$
+* Link function:
+  $$\text{logit}(p_{i,k}) = \eta_k(s_{i,k})$$
 
 ---
 
 ### Model D: similar to model C, but with question-independent age, gender, and education effects.
 
-**Spatial model for answers:**
-> Shared latent field: $\eta_{k}(s_{i,k}) = \beta_k + \beta_{\text{age}, k} \cdot \text{Age}_{i,k} + \gamma_{\text{gender}, k(i)} + \gamma_{\text{uni}, k(i)} + \upsilon_{\text{pid}(i)} + \alpha_k \cdot W_0(s_{i,k}) + W_k(s_{i,k})$
+**Spatial model for binarized answers:**
+* Shared latent field:
+  $$\eta_{k}(s_{i,k}) = \beta_k + \beta_{\text{age}, k} \cdot \text{Age}_{i,k} + \gamma_{\text{gender}, k(i)} + \gamma_{\text{uni}, k(i)} + \upsilon_{\text{pid}(i)} + \alpha_k \cdot W_0(s_{i,k}) + W_k(s_{i,k})$$
 
 
 ## How to reproduce the analysis
