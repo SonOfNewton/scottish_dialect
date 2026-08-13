@@ -7,15 +7,16 @@ This repo contains the code for applying spatial models to questionare data of S
 
 The project incldes:
 
-- a spatial model for each question.
-- a joint spatial model that includes multiple quesitons.
+- Separate spatial models for each question (model A, B).
+- Joint spatial models that includes multiple quesitons (model C, D).
+- Application of the models to the *sfy* dataset and the *scosya* dataset.
 
 The code produces:
 
-- estimation of the effects of age, gender, and education status on probability of using dialect
-- estimation of the spatial distribution of dialect usage frequency together with its uncertainty
-- posterior mean and std of the spatial fields
-- hierarchical clustering of questions based on similarity of their underlying spatial fields
+- Estimation of the effects of age, gender, and education status on probability of using dialect.
+- Estimation of the spatial distribution of dialect usage frequency together with its uncertainty.
+- Posterior mean and std of the spatial fields.
+- Hierarchical clustering of questions based on similarity of their underlying spatial fields.
 
 ## Repository structure
 
@@ -23,9 +24,10 @@ The code produces:
 scottish_dialect/
 ├── code/
 │   ├── functions.R
+│   ├── separate_question_modeling.R
 │   ├── joint_toy_example.R
 │   ├── joint_question_modeling.R
-│   ├── separate_question_modeling.R
+│   ├── joint_question_modeling_scosya.R
 ├── data/
 │   ├── sfy/
 │   │   ├── grammar-xxx.csv
