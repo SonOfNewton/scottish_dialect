@@ -86,12 +86,12 @@ for (i in seq_along(Q)) {
   q <- Q[i]
   if (type == "sound"){
     s <- standard[i]
-    question <- read.csv(sprintf("data/csv/sounds-about-right-%s.csv", q))
+    question <- read.csv(sprintf("data/sfy/sounds-about-right-%s.csv", q))
   } else if(type == "say"){
-    question <- read.csv(sprintf("data/csv/grammar-%s.csv", q))
+    question <- read.csv(sprintf("data/sfy/grammar-%s.csv", q))
   } else if (type == "word"){
     s <- standard[i]
-    question <- read.csv(sprintf("data/csv/lexical-%s.csv", q))
+    question <- read.csv(sprintf("data/sfy/lexical-%s.csv", q))
   }
   question <- question[question$lat > 0, ]
 

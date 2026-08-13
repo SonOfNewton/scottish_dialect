@@ -27,10 +27,12 @@ scottish_dialect/
 │   ├── joint_question_modeling.R
 │   ├── separate_question_modeling.R
 ├── data/
-│   ├── csv/
+│   ├── sfy/
 │   │   ├── grammar-xxx.csv
 │   │   ├── lexical-xxx.csv
 │   │   ├── sounds-about-right-xxx.csv
+│   ├── scosya/
+│   │   ├── xxx.csv
 ├── output/
 │   ├── figures/
 │   ├── tables/

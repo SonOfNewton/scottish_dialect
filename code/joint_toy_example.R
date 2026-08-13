@@ -25,8 +25,8 @@ spde <- spatial_env$spde
 pxl <- spatial_env$pxl
 
 # test with two questions
-q1 <- read.csv("data/csv/sounds-about-right-Q1-down.csv")
-q2 <- read.csv("data/csv/sounds-about-right-Q2-more.csv")
+q1 <- read.csv("data/sfy/sounds-about-right-Q1-down.csv")
+q2 <- read.csv("data/sfy/sounds-about-right-Q2-more.csv")
 # remove duplicate pids within each dataset to ensure each individual contributes only one response per question
 q1 <- q1 %>% distinct(pid, .keep_all = TRUE)
 q2 <- q2 %>% distinct(pid, .keep_all = TRUE)

@@ -33,7 +33,7 @@ raw_data_list <- list()
 all_pids <- c()
 
 for (i in seq_along(Q)) {
-  df <- read.csv(sprintf("data/csv/sounds-about-right-%s.csv", Q[i])) %>% 
+  df <- read.csv(sprintf("data/sfy/sounds-about-right-%s.csv", Q[i])) %>% 
     distinct(pid, .keep_all = TRUE)
   raw_data_list[[i]] <- df
   all_pids <- unique(c(all_pids, df$pid))
